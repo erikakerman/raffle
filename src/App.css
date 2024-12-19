@@ -1,0 +1,8 @@
+/* Base styles that complement Tailwind */
+#root {
+  width: 100%;
+  margin: 0 auto;
+  padding: 0;
+}
+
+/* Add any custom styles below */
