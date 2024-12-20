@@ -1,17 +1,20 @@
 // src/pages/CreateRafflePage.jsx
 import { useState } from "react";
-import { db } from "../services/firebase";
+import { db, storage } from "../services/firebase";
 import { useAuth } from "../context/AuthContext";
 import { addDoc, collection } from "firebase/firestore";
+import { ref, uploadBytes, getDownloadURL } from "firebase/storage";
 import { useNavigate } from "react-router-dom";
 
 export default function CreateRafflePage() {
   const [formData, setFormData] = useState({
     title: "",
     description: "",
-    imageUrl: "",
     duration: "7", // Default 7 days
   });
+  const [imageFile, setImageFile] = useState(null);
+  const [imagePreview, setImagePreview] = useState(null);
+  const [isLoading, setIsLoading] = useState(false);
 
   const { user } = useAuth();
   const navigate = useNavigate();
@@ -24,15 +27,53 @@ export default function CreateRafflePage() {
     }));
   };
 
+  const handleImageChange = (e) => {
+    const file = e.target.files[0];
+    if (file) {
+      // Validate file type and size
+      if (!file.type.startsWith("image/")) {
+        alert("Please upload an image file");
+        return;
+      }
+      if (file.size > 5 * 1024 * 1024) {
+        alert("Image size must be less than 5MB");
+        return;
+      }
+
+      setImageFile(file);
+      // Create preview URL
+      const previewUrl = URL.createObjectURL(file);
+      setImagePreview(previewUrl);
+    }
+  };
+
+  const uploadImage = async (file) => {
+    if (!file) return null;
+
+    const storageRef = ref(storage, `raffle-images/${Date.now()}-${file.name}`);
+    await uploadBytes(storageRef, file);
+    return await getDownloadURL(storageRef);
+  };
+
   const handleSubmit = async (e) => {
     e.preventDefault();
+    if (!imageFile) {
+      alert("Please select an image");
+      return;
+    }
+
+    setIsLoading(true);
 
     try {
+      // Upload image first
+      const imageUrl = await uploadImage(imageFile);
+
       const endDate = new Date();
       endDate.setDate(endDate.getDate() + parseInt(formData.duration));
 
       const docRef = await addDoc(collection(db, "raffles"), {
         ...formData,
+        imageUrl,
         createdBy: user.uid,
         createdAt: new Date().toISOString(),
         endDate: endDate.toISOString(),
@@ -45,6 +86,8 @@ export default function CreateRafflePage() {
     } catch (error) {
       console.error("Error creating raffle:", error);
       alert("Failed to create raffle");
+    } finally {
+      setIsLoading(false);
     }
   };
 
@@ -95,18 +138,55 @@ export default function CreateRafflePage() {
         </div>
 
         <div>
-          <label htmlFor="imageUrl" className="block text-sm font-medium mb-1">
-            Image URL
+          <label htmlFor="image" className="block text-sm font-medium mb-1">
+            Image
           </label>
-          <input
-            id="imageUrl"
-            name="imageUrl"
-            type="url"
-            value={formData.imageUrl}
-            onChange={handleChange}
-            className="w-full px-3 py-2 border rounded"
-            required
-          />
+          <div className="mt-1 flex justify-center px-6 pt-5 pb-6 border-2 border-dashed rounded-md">
+            <div className="space-y-2 text-center">
+              {imagePreview ? (
+                <div className="relative">
+                  <img
+                    src={imagePreview}
+                    alt="Preview"
+                    className="mx-auto h-48 w-full object-cover rounded"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setImageFile(null);
+                      setImagePreview(null);
+                    }}
+                    className="absolute top-2 right-2 bg-red-500 text-white p-1 rounded-full hover:bg-red-600"
+                  >
+                    ×
+                  </button>
+                </div>
+              ) : (
+                <>
+                  <div className="flex text-sm text-gray-600">
+                    <label
+                      htmlFor="image-upload"
+                      className="relative cursor-pointer bg-white rounded-md font-medium text-blue-600 hover:text-blue-500"
+                    >
+                      <span>Upload an image</span>
+                      <input
+                        id="image-upload"
+                        name="image-upload"
+                        type="file"
+                        className="sr-only"
+                        accept="image/*"
+                        onChange={handleImageChange}
+                        required
+                      />
+                    </label>
+                  </div>
+                  <p className="text-xs text-gray-500">
+                    PNG, JPG, GIF up to 5MB
+                  </p>
+                </>
+              )}
+            </div>
+          </div>
         </div>
 
         <div>
@@ -129,9 +209,14 @@ export default function CreateRafflePage() {
 
         <button
           type="submit"
-          className="w-full bg-blue-500 text-white py-2 px-4 rounded hover:bg-blue-600"
+          disabled={isLoading}
+          className={`w-full py-2 px-4 rounded ${
+            isLoading
+              ? "bg-gray-400 cursor-not-allowed"
+              : "bg-blue-500 hover:bg-blue-600"
+          } text-white`}
         >
-          Create Raffle
+          {isLoading ? "Creating..." : "Create Raffle"}
         </button>
       </form>
     </div>
